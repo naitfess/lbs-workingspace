@@ -1,0 +1,164 @@
+<!doctype html>
+<html data-theme="cupcake">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyJog</title>
+  <link href="./output.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.0/leaflet-routing-machine.css" />
+  <style>
+    #map { 
+        height: 60vh;
+        width: 100%; 
+    }
+  </style>
+</head>
+<body>
+  <div class="min-h-screen bg-base-200 flex flex-col justify-center items-center p-4">
+    <div class="text-center container mx-auto">
+      <h1 class="text-4xl font-bold text-primary mb-4">
+        StudyJog
+      </h1>
+      <p class="text-lg text-neutral mb-6">
+        Temukan tempat belajar terbaik di sekitar Anda!
+      </p>
+
+      <!-- Wrapper untuk input radius dan tombol -->
+      <div class="flex justify-center items-center gap-4 mb-6">
+        <!-- Input untuk radius di kiri -->
+        <input id="radiusInput" type="number" placeholder="Radius (km)" class="input input-bordered input-primary w-36 p-3 rounded-md border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary transition-all duration-300" value="5" min="1" max="100" step="1" />
+        
+        <!-- Tombol untuk menampilkan peta -->
+        <button id="cariButton" class="btn btn-primary text-white text-lg">
+          Cari Sekarang
+        </button>
+      </div>
+
+      <!-- Div untuk map, yang akan ditampilkan setelah tombol diklik -->
+      <div id="map" class="mt-8 hidden"></div>
+    </div>
+  </div>
+
+  <!-- Script untuk Leaflet dan fungsionalitas tombol -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.0/leaflet-routing-machine.js"></script>
+  <script src="list.js"></script> 
+  <script>
+    // Mengambil elemen tombol, input radius, dan map
+    const cariButton = document.getElementById('cariButton');
+    const mapDiv = document.getElementById('map');
+    const radiusInput = document.getElementById('radiusInput');
+    
+    let currentRouteControl;  // Variabel untuk mengontrol rute
+    let selectedMarker = null;  // Variabel untuk marker yang dipilih
+    const markers = [];  // Menyimpan semua marker coworking space untuk memanipulasi warna
+    let map;  // Variabel global untuk peta
+
+    // Fungsi untuk membuat icon custom dengan warna
+    function createIcon(color) {
+      return L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff;"></div>`,
+        iconSize: [20, 20]
+      });
+    }
+
+    // Fungsi untuk menghapus semua marker dari peta
+    function removeMarkers() {
+      markers.forEach(marker => {
+        map.removeLayer(marker);  // Menghapus marker dari peta
+      });
+      markers.length = 0;  // Kosongkan array markers
+    }
+
+    // Fungsi untuk menampilkan peta dan mencari lokasi pengguna
+    function initMap(latitude, longitude) {
+      map = L.map('map').setView([latitude, longitude], 13);
+
+      // Menambahkan layer peta OpenStreetMap
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      // Menambahkan marker di lokasi pengguna dengan warna merah
+      const userMarker = L.marker([latitude, longitude], {
+        icon: createIcon('red')
+      }).addTo(map)
+        .bindPopup('<b>Lokasi Anda</b>')
+        .openPopup();
+
+      // Membuat routing control
+      currentRouteControl = L.Routing.control({
+        waypoints: [],
+        routeWhileDragging: true,
+        lineOptions: { styles: [{ color: 'blue', weight: 5 }] },
+      }).addTo(map);
+    }
+
+    // Event listener untuk tombol
+    cariButton.addEventListener('click', function() {
+      // Menampilkan div map
+      mapDiv.classList.remove('hidden');
+      
+      // Memeriksa apakah geolocation tersedia
+      if (navigator.geolocation) {
+        // Mendapatkan lokasi pengguna
+        navigator.geolocation.getCurrentPosition(function(position) {
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+          const userLocation = L.latLng(latitude, longitude);  // Menyimpan lokasi pengguna
+
+          // Jika peta belum diinisialisasi, inisialisasi peta
+          if (!map) {
+            initMap(latitude, longitude);
+          } else {
+            // Jika peta sudah ada, set ulang lokasi dan zoom
+            map.setView([latitude, longitude], 13);
+          }
+
+          // Reset routing control sebelum menambahkan waypoint baru
+          currentRouteControl.getPlan().setWaypoints([]);
+
+          // Menghapus marker lama
+          removeMarkers();
+
+          // Mendapatkan nilai radius dari input
+          const radius = parseFloat(radiusInput.value) * 1000;  // Mengkonversi km ke meter
+
+          // Menambahkan marker untuk setiap coworking space yang berada dalam radius yang ditentukan
+          coWorkingSpace.forEach((space) => {
+            const coworkingLocation = L.latLng(space.lat, space.lon);
+            const distance = userLocation.distanceTo(coworkingLocation); // Menghitung jarak
+
+            if (distance <= radius) {  // Memeriksa apakah dalam radius
+              const marker = L.marker([space.lat, space.lon], {
+                icon: createIcon('gray') // Warna awal marker adalah abu-abu
+              }).addTo(map)
+                .bindPopup(`<b>${space.name}</b><br>${space.address}`)
+                .on('click', function() {
+                  // Menambahkan waypoint untuk rute dan mengubah warna marker menjadi merah
+                  currentRouteControl.setWaypoints([userLocation, L.latLng(space.lat, space.lon)]);
+
+                  // Mengubah warna marker yang dipilih menjadi merah
+                  if (selectedMarker) {
+                    selectedMarker.setIcon(createIcon('gray'));  // Kembalikan warna marker sebelumnya ke abu-abu
+                  }
+                  marker.setIcon(createIcon('red'));  // Ubah warna marker yang dipilih menjadi merah
+                  selectedMarker = marker;  // Tandai marker yang baru dipilih
+                });
+
+              markers.push(marker);  // Menyimpan marker untuk mengubah warna
+            }
+          });
+
+        }, function(error) {
+          alert("Geolocation tidak dapat diakses atau pengguna menolak permintaan.");
+        });
+      } else {
+        alert("Geolocation tidak didukung oleh browser ini.");
+      }
+    });
+  </script>
+</body>
+</html>
